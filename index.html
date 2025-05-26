@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplicativo de Dados Meteorológicos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        /* Inter font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
+        }
+        /* Light theme variables */
+        :root {
+            --bg-color: #f3f4f6; /* gray-100 */
+            --text-color: #1f2937; /* gray-800 */
+            --card-bg: #ffffff;
+            --card-border: #e5e7eb; /* gray-200 */
+            --primary-accent: #4f46e5; /* indigo-600 */
+            --secondary-accent: #86efac; /* green-300 for ETo highlight */
+            --icon-color: #1f2937; 
+            --eto-highlight-bg: #e0e7ff; 
+            --eto-highlight-text: #3730a3; 
+            --input-bg: #ffffff;
+            --input-border: #d1d5db; 
+            --input-text: #1f2937;
+            --button-secondary-bg: #e5e7eb;
+            --button-secondary-text: #374151;
+            --button-secondary-hover-bg: #d1d5db;
+            --danger-text: #dc2626; /* red-600 */
+            --danger-hover-text: #b91c1c; /* red-700 */
+            --skeleton-bg: #e5e7eb; /* gray-200 */
+            --skeleton-highlight: #f0f2f5; /* lighter gray for pulse */
+        }
+        /* Dark theme variables */
+        [data-theme="dark"] {
+            --bg-color: #1f2937; 
+            --text-color: #f3f4f6; 
+            --card-bg: #374151; 
+            --card-border: #4b5563; 
+            --primary-accent: #818cf8; 
+            --secondary-accent: #34d399; 
+            --icon-color: #f3f4f6; 
+            --eto-highlight-bg: #312e81; 
+            --eto-highlight-text: #c7d2fe; 
+            --input-bg: #4b5563; 
+            --input-border: #6b7280; 
+            --input-text: #f3f4f6;
+            --button-secondary-bg: #4b5563;
+            --button-secondary-text: #e5e7eb;
+            --button-secondary-hover-bg: #6b7280;
+            --danger-text: #f87171; /* red-400 */
+            --danger-hover-text: #ef4444; /* red-500 */
+            --skeleton-bg: #4b5563; /* gray-600 */
+            --skeleton-highlight: #525c6b; /* lighter gray for pulse in dark */
+        }
+        .bg-theme { background-color: var(--bg-color); }
+        .text-theme { color: var(--text-color); }
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 0.75rem; 
+            padding: 1.5rem; 
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+            transition: background-color 0.3s ease-in-out, border-color 0.3s ease-in-out;
+        }
+        .weather-icon { width: 1.75rem; height: 1.75rem; transition: fill 0.3s ease-in-out; }
+        .theme-icon { width: 1rem; height: 1rem; fill: var(--text-color); transition: fill 0.3s ease-in-out; }
+        @media (min-width: 640px) { .theme-icon { width: 1.25rem; height: 1.25rem; } }
+
+        #map { height: 250px; border-radius: 0.75rem; margin-bottom: 1rem; }
+        .eto-value-highlight {
+            background-color: var(--eto-highlight-bg); color: var(--eto-highlight-text);
+            padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-weight: 600;
+            transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
+        }
+        .loading-spinner-global { 
+            border: 4px solid var(--card-border); border-top: 4px solid var(--primary-accent);
+            border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        [data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
+        [data-theme="dark"] .leaflet-marker-icon, 
+        [data-theme="dark"] .leaflet-marker-shadow { filter: invert(1) hue-rotate(180deg) brightness(1.1) contrast(1.1); }
+        
+        .input-theme { background-color: var(--input-bg); border: 1px solid var(--input-border); color: var(--input-text); transition: background-color 0.3s ease-in-out, border-color 0.3s ease-in-out, color 0.3s ease-in-out;}
+        .input-theme::placeholder { color: var(--icon-color); transition: color 0.3s ease-in-out;}
+
+        #autocomplete-suggestions {
+            position: absolute; background-color: var(--card-bg); border: 1px solid var(--card-border);
+            border-top: none; border-radius: 0 0 0.5rem 0.5rem; z-index: 1000; max-height: 200px;
+            overflow-y: auto; width: calc(100% - 3rem); 
+            transition: background-color 0.3s ease-in-out, border-color 0.3s ease-in-out;
+        }
+        .autocomplete-item { padding: 0.75rem 1rem; cursor: pointer; color: var(--text-color); transition: background-color 0.2s ease-in-out, color 0.3s ease-in-out;}
+        .autocomplete-item:hover { background-color: var(--button-secondary-hover-bg); }
+        
+        .saved-location-btn {
+            background-color: var(--button-secondary-bg); color: var(--button-secondary-text);
+            padding: 0.5rem 1rem; border-radius: 0.375rem;
+            transition: background-color 0.2s ease-in-out, color 0.3s ease-in-out; font-size: 0.875rem;
+        }
+        .saved-location-btn:hover { background-color: var(--button-secondary-hover-bg); }
+        .remove-location-btn { color: var(--danger-text); margin-left: 0.5rem; font-weight: bold; transition: color 0.2s ease-in-out;}
+        .remove-location-btn:hover { color: var(--danger-hover-text); }
+
+        /* Skeleton Styles */
+        .skeleton { background-color: var(--skeleton-bg); border-radius: 0.25rem; position: relative; overflow: hidden; }
+        .skeleton::before { 
+            content: ''; position: absolute; top: 0; left: -150%; height: 100%; width: 150%;
+            background: linear-gradient(to right, transparent 0%, var(--skeleton-highlight) 50%, transparent 100%);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0% { left: -150%; } 100% { left: 150%; } }
+        .skeleton-text { height: 1em; margin-bottom: 0.5em; }
+        .skeleton-text-sm { height: 0.875em; margin-bottom: 0.4em; }
+        .skeleton-title { height: 1.5em; margin-bottom: 0.75em; width: 60%; }
+        .skeleton-icon-placeholder { width: 1.75rem; height: 1.75rem; border-radius: 50%; }
+        
+        .card-content { opacity: 0; transform: translateY(10px); transition: opacity 0.4s ease-out, transform 0.4s ease-out; }
+        .card-content.loaded { opacity: 1; transform: translateY(0); }
+
+    </style>
+</head>
+<body class="bg-theme text-theme min-h-screen p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-6">
+            <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-2">
+                <div class="mb-2 sm:mb-0">
+                    <h1 id="location-display" class="text-2xl font-bold">A carregar localização...</h1>
+                    <p id="date-display" class="text-sm text-gray-500 dark:text-gray-400">A carregar data...</p>
+                </div>
+                <div class="flex items-center self-end sm:self-center">
+                    <button id="save-location-btn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-1.5 px-2.5 sm:py-2 sm:px-3 rounded-lg transition-colors text-xs sm:text-sm mr-2 sm:mr-3 hidden">
+                        Salvar Localização
+                    </button>
+                    <button id="theme-toggle" title="Alternar tema" class="p-1.5 sm:p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <svg id="sun-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="theme-icon hidden"><title>Tema Claro</title><path fill-rule="evenodd" d="M12 17.5a5.5 5.5 0 100-11 5.5 5.5 0 000 11zM12 20a.75.75 0 01.75-.75v-2.5a.75.75 0 01-1.5 0v2.5A.75.75 0 0112 20zm-5.092-2.032a.75.75 0 01.917-.529l2.131.71a.75.75 0 01-.53 1.433l-2.13-.71a.75.75 0 01-.387-.904zm10.184 0a.75.75 0 01-.387.904l-2.13.71a.75.75 0 11-.531-1.432l2.13-.71a.75.75 0 01.918.529zM4 12a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h2.5A.75.75 0 014 12zm15.25.75a.75.75 0 010-1.5h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75zM6.908 6.968a.75.75 0 01.387-.904l2.13-.71a.75.75 0 11.532 1.432l-2.13.71a.75.75 0 01-.917-.528zM17.092 6.968a.75.75 0 01-.917.528l-2.131-.71a.75.75 0 01.53-1.433l2.13.71a.75.75 0 01.387.904zM12 4a.75.75 0 01-.75.75V.75a.75.75 0 011.5 0v2.5A.75.75 0 0112 4z" clip-rule="evenodd"></path></svg>
+                        <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="theme-icon hidden"><title>Tema Escuro</title><path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.7-10.5-10.5 0-3.568 1.768-6.724 4.538-8.632a.75.75 0 01.818.162z" clip-rule="evenodd"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div id="today-overview-card" class="card mb-6">
+                 <div class="card-content">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="flex items-center space-x-3" id="today-eto-container">
+                            <div> <p class="text-sm text-gray-500 dark:text-gray-400">ETo</p> <p id="today-eto" class="text-xl font-semibold">- mm</p> </div>
+                        </div>
+                        <div class="flex items-center space-x-3" id="today-precipitation-container">
+                            <div> <p class="text-sm text-gray-500 dark:text-gray-400">Precipitação</p> <p id="today-precipitation" class="text-xl font-semibold">- mm</p> </div>
+                        </div>
+                    </div>
+                 </div>
+                 <div class="skeleton-container hidden"> <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div> <div class="skeleton skeleton-text-sm w-1/4 mb-1"></div> <div class="skeleton skeleton-text w-1/2"></div> </div>
+                        <div> <div class="skeleton skeleton-text-sm w-1/3 mb-1"></div> <div class="skeleton skeleton-text w-1/2"></div> </div>
+                    </div>
+                 </div>
+            </div>
+        </header>
+
+        <div class="mb-6 card">
+            <h2 class="text-xl font-semibold mb-3">Selecionar Localização</h2>
+            <div class="mb-4 relative">
+                <label for="location-search" class="sr-only">Procurar Localização</label>
+                <div class="flex gap-2">
+                    <input type="text" id="location-search" placeholder="Ex: Lisboa, Portugal ou Rua ABC, Porto" class="input-theme flex-grow p-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                    <button id="search-location-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                        Buscar
+                    </button>
+                </div>
+                <div id="autocomplete-suggestions" class="hidden w-full"></div>
+            </div>
+            <div id="map" class="mb-4"></div>
+            <button id="use-location-btn" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                Usar Minha Localização Atual
+            </button>
+        </div>
+
+        <div id="saved-locations-card" class="card mb-6 hidden">
+            <h2 class="text-xl font-semibold mb-3">Localizações Salvas</h2>
+            <div id="saved-locations-list" class="flex flex-wrap gap-2"></div>
+            <p id="no-saved-locations" class="text-sm text-gray-500 dark:text-gray-400 hidden">Nenhuma localização salva ainda.</p>
+        </div>
+        
+        <div id="global-loading-indicator" class="flex justify-center items-center my-8 hidden"> 
+            <div class="loading-spinner-global"></div> <p class="ml-3 text-lg">A procurar...</p>
+        </div>
+        <div id="error-message" class="card bg-red-100 border-red-400 text-red-700 dark:bg-red-900 dark:border-red-700 dark:text-red-300 p-4 my-4 hidden"></div>
+
+        <div id="forecast-summary-card" class="card mb-6">
+            <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4">
+                <h2 class="text-xl font-semibold mb-2 sm:mb-0">Resumo da Previsão (<span id="forecast-summary-days">5</span> dias)</h2>
+                <div class="flex items-center space-x-2 self-start sm:self-center"> 
+                    <label for="forecast-days" class="text-sm font-medium">Previsão:</label>
+                    <select id="forecast-days" class="input-theme text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2">
+                        <option value="3">3 Dias</option> <option value="5" selected>5 Dias</option> <option value="7">7 Dias</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-content">
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2" id="summary-eto-container"> <span>ETo Total:</span> </div>
+                        <span id="total-eto" class="font-semibold">- mm</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2" id="summary-precipitation-container"> <span>Precipitação Total:</span> </div>
+                        <span id="total-precipitation" class="font-semibold">- mm</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <svg class="weather-icon" viewBox="0 0 24 24" fill="none" stroke="var(--icon-color)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"></path></svg>
+                            <span>Precipitação vs ETo:</span>
+                        </div>
+                        <span id="precipitation-vs-eto" class="font-semibold">- %</span>
+                    </div>
+                </div>
+            </div>
+            <div class="skeleton-container hidden"> 
+                <div class="skeleton skeleton-title w-3/4 mb-4"></div> <div class="space-y-3">
+                    <div class="flex justify-between"> <div class="skeleton skeleton-text w-1/3"></div> <div class="skeleton skeleton-text w-1/4"></div> </div>
+                    <div class="flex justify-between"> <div class="skeleton skeleton-text w-2/5"></div> <div class="skeleton skeleton-text w-1/4"></div> </div>
+                    <div class="flex justify-between"> <div class="skeleton skeleton-text w-1/2"></div> <div class="skeleton skeleton-text w-1/5"></div> </div>
+                </div>
+            </div>
+        </div>
+
+        <section id="forecast-data" class="mb-6">
+            <h2 class="text-xl font-semibold mb-4">Dados de Previsão</h2>
+            <div id="forecast-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </section>
+
+        <section id="historical-data" class="mb-6">
+            <h2 class="text-xl font-semibold mb-4">Dados Históricos (Últimos 5 dias)</h2>
+            <div id="historical-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </section>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        // const geolocationPromptModal = document.getElementById('geolocation-prompt-modal'); // REMOVED
+        // const proceedGeolocationBtn = document.getElementById('proceed-geolocation-btn'); // REMOVED
+        // const cancelGeolocationBtn = document.getElementById('cancel-geolocation-btn'); // REMOVED
+        const saveLocationBtn = document.getElementById('save-location-btn');
+        const savedLocationsCard = document.getElementById('saved-locations-card');
+        const savedLocationsList = document.getElementById('saved-locations-list');
+        const noSavedLocationsMsg = document.getElementById('no-saved-locations');
+        const autocompleteSuggestionsContainer = document.getElementById('autocomplete-suggestions');
+        const themeToggle = document.getElementById('theme-toggle');
+        const sunIcon = document.getElementById('sun-icon');
+        const moonIcon = document.getElementById('moon-icon');
+        const locationDisplay = document.getElementById('location-display');
+        const dateDisplay = document.getElementById('date-display');
+        const useLocationBtn = document.getElementById('use-location-btn');
+        const forecastDaysSelect = document.getElementById('forecast-days');
+        const mapElement = document.getElementById('map');
+        const globalLoadingIndicator = document.getElementById('global-loading-indicator'); 
+        const errorMessageDiv = document.getElementById('error-message');
+        const locationSearchInput = document.getElementById('location-search');
+        const searchLocationBtn = document.getElementById('search-location-btn');
+        
+        const todayOverviewCardEl = document.getElementById('today-overview-card');
+        const todayOverviewContent = todayOverviewCardEl.querySelector('.card-content');
+        const todayOverviewSkeleton = todayOverviewCardEl.querySelector('.skeleton-container');
+        const todayEtoEl = document.getElementById('today-eto');
+        const todayPrecipitationEl = document.getElementById('today-precipitation');
+        const todayEtoContainer = document.getElementById('today-eto-container');
+        const todayPrecipitationContainer = document.getElementById('today-precipitation-container');
+
+        const forecastSummaryCardEl = document.getElementById('forecast-summary-card');
+        const forecastSummaryContent = forecastSummaryCardEl.querySelector('.card-content');
+        const forecastSummarySkeleton = forecastSummaryCardEl.querySelector('.skeleton-container');
+        const forecastSummaryDaysEl = document.getElementById('forecast-summary-days');
+        const totalEtoEl = document.getElementById('total-eto');
+        const totalPrecipitationEl = document.getElementById('total-precipitation');
+        const precipitationVsEtoEl = document.getElementById('precipitation-vs-eto');
+        const summaryEtoContainer = document.getElementById('summary-eto-container');
+        const summaryPrecipitationContainer = document.getElementById('summary-precipitation-container');
+        
+        const forecastCardsContainer = document.getElementById('forecast-cards-container');
+        const historicalCardsContainer = document.getElementById('historical-cards-container');
+
+        // --- App State ---
+        let currentTheme = localStorage.getItem('theme') || 'light';
+        let map;
+        let currentMarker;
+        let currentCoords = { lat: 38.7223, lon: -9.1393 }; 
+        let currentCityName = "Lisboa, Portugal";
+        let savedLocations = JSON.parse(localStorage.getItem('savedWeatherLocations')) || [];
+        let isFetchingLocationName = false; 
+
+        // --- API & Cache ---
+        const OPENMETEO_API_URL = 'https://api.open-meteo.com/v1/forecast';
+        const NOMINATIM_REVERSE_GEOCODE_URL = 'https://nominatim.openstreetmap.org/reverse';
+        const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
+
+        // --- Icons SVG ---
+        const ICONS = {
+            eto: `<svg class="weather-icon" viewBox="0 0 24 24"><path fill="var(--icon-color)" d="M12,3.25C12,3.25 6,10 6,14C6,17.32 8.69,20 12,20A6,6 0,0 0,18 14C18,10 12,3.25 12,3.25M14.47,9.97L15.53,11.03L9.53,17.03L8.47,15.97M9.75,10A1.25,1.25 0,0 1,11 11.25A1.25,1.25 0,0 1,9.75 12.5A1.25,1.25 0,0 1,8.5 11.25A1.25,1.25 0,0 1,9.75 10M14.25,14.5A1.25,1.25 0,0 1,15.5 15.75A1.25,1.25 0,0 1,14.25 17A1.25,1.25 0,0 1,13 15.75A1.25,1.25 0,0 1,14.25 14.5Z"></path></svg>`,
+            precipitation: `<svg class="weather-icon" viewBox="0 0 24 24"><path fill="var(--icon-color)" d="M9,12C9.53,12.14 9.85,12.69 9.71,13.22L8.41,18.05C8.27,18.59 7.72,18.9 7.19,18.76C6.65,18.62 6.34,18.07 6.5,17.54L7.78,12.71C7.93,12.17 8.47,11.86 9,12M13,12C13.53,12.14 13.85,12.69 13.71,13.22L11.64,20.95C11.5,21.5 10.95,21.8 10.41,21.66C9.88,21.5 9.56,20.97 9.7,20.43L11.78,12.71C11.93,12.17 12.47,11.86 13,12M17,12C17.53,12.14 17.85,12.69 17.71,13.22L16.41,18.05C16.27,18.59 15.72,18.9 15.19,18.76C14.65,18.62 14.34,18.07 14.5,17.54L15.78,12.71C15.93,12.17 16.47,11.86 17,12M17,10V9A5,5 0 0,0 12,4C9.5,4 7.45,5.82 7.06,8.19C6.73,8.07 6.37,8 6,8A3,3 0 0,0 3,11C3,12.11 3.6,13.08 4.5,13.6V13.59C5,13.87 5.14,14.5 4.87,14.96C4.59,15.43 4,15.6 3.5,15.32V15.33C2,14.47 1,12.85 1,11A5,5 0,0 1,6,6C7,3.65 9.3,2 12,2C15.43,2 18.24,4.66 18.5,8.03L19,8A4,4 0,0 1,23,12C23,13.5 22.2,14.77 21,15.46V15.46C20.5,15.73 19.91,15.57 19.63,15.09C19.36,14.61 19.5,14 20,13.72V13.73C20.6,13.39 21,12.74 21,12A2,2 0,0 0,19,10H17Z"></path></svg>`,
+            temp_max: `<svg class="weather-icon" viewBox="0 0 24 24"><path fill="var(--icon-color)" d="M15,13V5A3,3 0 0,0 9,5V13A5,5 0 1,0 15,13M12,4A1,1 0 0,1 13,5V8H11V5A1,1 0 0,1 12,4M12,14A3,3 0 0,1 9,11V9H10.5V11A1.5,1.5 0 0,0 12,12.5A1.5,1.5 0 0,0 13.5,11V9H15V11A3,3 0 0,1 12,14M21,9H16.5V7H21V9M21,11H16.5V13H21V11M21,15H16.5V17H21V15Z"></path></svg>`,
+            temp_min: `<svg class="weather-icon" viewBox="0 0 24 24"><path fill="var(--icon-color)" d="M15,13V5A3,3 0 0,0 9,5V13A5,5 0 1,0 15,13M12,4A1,1 0 0,1 13,5V8H11V5A1,1 0 0,1 12,4M12,14A3,3 0 0,1 9,11V9H15V11A3,3 0 0,1 12,14M21,17H16.5V15H21V17M21,21H16.5V19H21V21M21,13H16.5V11H21V13Z"></path></svg>`
+        };
+
+        function injectIcons() {
+            todayEtoContainer.insertAdjacentHTML('afterbegin', ICONS.eto);
+            todayPrecipitationContainer.insertAdjacentHTML('afterbegin', ICONS.precipitation);
+            summaryEtoContainer.insertAdjacentHTML('afterbegin', ICONS.eto);
+            summaryPrecipitationContainer.insertAdjacentHTML('afterbegin', ICONS.precipitation);
+        }
+
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); };
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            if (theme === 'dark') { sunIcon.classList.remove('hidden'); moonIcon.classList.add('hidden'); } 
+            else { sunIcon.classList.add('hidden'); moonIcon.classList.remove('hidden'); }
+            currentTheme = theme; localStorage.setItem('theme', theme);
+        }
+        themeToggle.addEventListener('click', () => applyTheme(currentTheme === 'light' ? 'dark' : 'light'));
+
+        function updateDateDisplay() {
+            const now = new Date();
+            const options = { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' };
+            let formattedDate = new Intl.DateTimeFormat('pt-PT', options).format(now).replace(/\.$/, '');
+            dateDisplay.textContent = "Hoje, " + formattedDate;
+        }
+        function updateLocationDisplay(name) {
+            locationDisplay.textContent = name || "Localização Desconhecida";
+            saveLocationBtn.classList.remove('hidden');
+        }
+        
+        function initMap() {
+            map = L.map(mapElement).setView([currentCoords.lat, currentCoords.lon], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+            currentMarker = L.marker([currentCoords.lat, currentCoords.lon]).addTo(map);
+            map.on('click', async function(e) { updateMapAndFetchWeather(e.latlng.lat, e.latlng.lng, "Localização selecionada no mapa", true); });
+        }
+
+        async function updateMapAndFetchWeather(lat, lon, displayName, fromMapClick = false) {
+            isFetchingLocationName = true; 
+            currentCoords = { lat: lat, lon: lon };
+            if (currentMarker) map.removeLayer(currentMarker);
+            currentMarker = L.marker([lat, lon]).addTo(map); map.panTo([lat, lon]);
+            if (fromMapClick || displayName === "Localização atual" || displayName === "Localização selecionada no mapa") { await fetchCityNameFromCoords(lat, lon); } 
+            else { currentCityName = displayName; }
+            updateLocationDisplay(currentCityName); fetchWeatherData();
+            isFetchingLocationName = false; 
+        }
+
+        async function fetchCityNameFromCoords(lat, lon) {
+            try {
+                const response = await fetch(`${NOMINATIM_REVERSE_GEOCODE_URL}?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=pt`);
+                if (!response.ok) throw new Error('Falha ao obter o nome da cidade');
+                const data = await response.json();
+                let city = data.address.city || data.address.town || data.address.village || data.address.county || data.address.state || 'Área desconhecida';
+                let country = data.address.country || '';
+                currentCityName = `${city}, ${country}`;
+            } catch (error) { console.error("Erro ao obter nome da cidade:", error); currentCityName = "Localização Selecionada"; }
+        }
+
+        function renderSavedLocations() {
+            savedLocationsList.innerHTML = '';
+            if (savedLocations.length === 0) { noSavedLocationsMsg.classList.remove('hidden'); savedLocationsCard.classList.add('hidden'); return; }
+            noSavedLocationsMsg.classList.add('hidden'); savedLocationsCard.classList.remove('hidden'); 
+            savedLocations.forEach((location, index) => {
+                const locationEl = document.createElement('div'); locationEl.className = 'flex items-center';
+                const btn = document.createElement('button'); btn.className = 'saved-location-btn'; btn.textContent = location.name;
+                btn.addEventListener('click', () => { updateMapAndFetchWeather(location.lat, location.lon, location.name); });
+                const removeBtn = document.createElement('button'); removeBtn.className = 'remove-location-btn'; removeBtn.innerHTML = '&times;'; removeBtn.title = `Remover ${location.name}`;
+                removeBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteSavedLocation(index); });
+                locationEl.appendChild(btn); locationEl.appendChild(removeBtn); savedLocationsList.appendChild(locationEl);
+            });
+        }
+
+        saveLocationBtn.addEventListener('click', () => {
+            if (isFetchingLocationName || !currentCityName || currentCityName === "A carregar localização...") { showError("Aguarde, o nome da localização ainda está a ser determinado."); return; }
+            const locationExists = savedLocations.some(loc => loc.lat.toFixed(4) === currentCoords.lat.toFixed(4) && loc.lon.toFixed(4) === currentCoords.lon.toFixed(4));
+            if (locationExists) { showError(`${currentCityName} já está salvo.`); return; }
+            if (savedLocations.length >= 10) { showError("Limite de localizações salvas atingido (10)."); return; }
+            savedLocations.push({ name: currentCityName, lat: currentCoords.lat, lon: currentCoords.lon });
+            localStorage.setItem('savedWeatherLocations', JSON.stringify(savedLocations)); renderSavedLocations();
+            showError(`${currentCityName} salvo com sucesso!`, 'success'); 
+        });
+
+        function deleteSavedLocation(index) {
+            const locationName = savedLocations[index].name;
+            savedLocations.splice(index, 1); localStorage.setItem('savedWeatherLocations', JSON.stringify(savedLocations));
+            renderSavedLocations(); showError(`${locationName} removido.`, 'success');
+        }
+
+        const debouncedFetchAutocomplete = debounce(async (query) => {
+            if (query.length < 3) { autocompleteSuggestionsContainer.innerHTML = ''; autocompleteSuggestionsContainer.classList.add('hidden'); return; }
+            try {
+                const response = await fetch(`${NOMINATIM_SEARCH_URL}?q=${encodeURIComponent(query)}&format=jsonv2&limit=5&addressdetails=1&accept-language=pt`);
+                if (!response.ok) throw new Error('Falha no autocompletar');
+                const results = await response.json(); renderAutocompleteSuggestions(results);
+            } catch (error) { console.error("Erro autocompletar:", error); autocompleteSuggestionsContainer.innerHTML = ''; autocompleteSuggestionsContainer.classList.add('hidden'); }
+        }, 300);
+        locationSearchInput.addEventListener('input', (e) => { debouncedFetchAutocomplete(e.target.value); });
+        
+        function renderAutocompleteSuggestions(results) {
+            autocompleteSuggestionsContainer.innerHTML = '';
+            if (results.length === 0) { autocompleteSuggestionsContainer.classList.add('hidden'); return; }
+            results.forEach(result => {
+                const item = document.createElement('div'); item.className = 'autocomplete-item'; item.textContent = result.display_name;
+                item.addEventListener('click', () => {
+                    const lat = parseFloat(result.lat); const lon = parseFloat(result.lon);
+                    let displayName = result.address.city || result.address.town || result.address.village || result.name || result.display_name;
+                    if(result.address.country) displayName += `, ${result.address.country}`;
+                    updateMapAndFetchWeather(lat, lon, displayName);
+                    locationSearchInput.value = ''; autocompleteSuggestionsContainer.innerHTML = ''; autocompleteSuggestionsContainer.classList.add('hidden');
+                });
+                autocompleteSuggestionsContainer.appendChild(item);
+            });
+            autocompleteSuggestionsContainer.classList.remove('hidden');
+            const inputRect = locationSearchInput.getBoundingClientRect();
+            autocompleteSuggestionsContainer.style.width = `${inputRect.width}px`;
+            const parentRect = locationSearchInput.parentElement.getBoundingClientRect();
+            autocompleteSuggestionsContainer.style.left = `${inputRect.left - parentRect.left}px`;
+        }
+        document.addEventListener('click', function(event) {
+            if (!locationSearchInput.contains(event.target) && !autocompleteSuggestionsContainer.contains(event.target)) { autocompleteSuggestionsContainer.classList.add('hidden'); }
+        });
+        searchLocationBtn.addEventListener('click', () => { autocompleteSuggestionsContainer.classList.add('hidden'); handleLocationSearch(); });
+
+        async function handleLocationSearch() { 
+            const query = locationSearchInput.value.trim();
+            if (!query) { showError("Por favor, insira um local para pesquisar."); return; }
+            showGlobalLoading("A procurar localização..."); 
+            try {
+                const response = await fetch(`${NOMINATIM_SEARCH_URL}?q=${encodeURIComponent(query)}&format=jsonv2&limit=1&addressdetails=1&accept-language=pt`);
+                if (!response.ok) throw new Error('Falha na pesquisa');
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    const result = data[0]; const lat = parseFloat(result.lat); const lon = parseFloat(result.lon);
+                    let displayName = result.address.city || result.address.town || result.address.village || result.name || result.display_name;
+                    if(result.address.country) displayName += `, ${result.address.country}`;
+                    updateMapAndFetchWeather(lat, lon, displayName); locationSearchInput.value = ''; 
+                } else { showError(`Nenhum resultado para "${query}".`); }
+            } catch (error) { console.error("Erro pesquisa:", error); showError("Erro ao pesquisar. Tente novamente."); } 
+            finally { hideGlobalLoading(); }
+        }
+
+        function proceedWithGeolocation() {
+            if (navigator.geolocation) {
+                showGlobalLoading("A obter a sua localização..."); 
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => { 
+                        hideGlobalLoading(); 
+                        updateMapAndFetchWeather(position.coords.latitude, position.coords.longitude, "Localização atual", true); 
+                    },
+                    (error) => { 
+                        hideGlobalLoading(); 
+                        console.error("Erro geo:", "Code:", error.code, "Message:", error.message, error); 
+                        let msg = "Não foi possível obter a sua localização. ";
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED: msg += "Permissão negada."; break;
+                            case error.POSITION_UNAVAILABLE: msg += "Informação indisponível."; break;
+                            case error.TIMEOUT: msg += "Tempo esgotado."; break; 
+                            default: msg += "Erro desconhecido.";
+                        }
+                        showError(msg + " Selecione no mapa ou pesquise."); 
+                        if (!currentCityName || currentCityName === "A carregar localização...") { 
+                            updateMapAndFetchWeather(currentCoords.lat, currentCoords.lon, "Lisboa, Portugal (Padrão)"); 
+                        }
+                    }, 
+                    { timeout: 10000 }
+                );
+            } else { 
+                showError("Geolocalização não é suportada."); 
+            }
+        }
+
+        useLocationBtn.addEventListener('click', () => {
+            // Directly call proceedWithGeolocation without showing the modal
+            proceedWithGeolocation();
+        });
+
+        // REMOVED Event listeners for proceedGeolocationBtn and cancelGeolocationBtn as the modal is removed
+
+        function createSkeletonCard() {
+            const cardWrapper = document.createElement('div'); cardWrapper.className = 'card';
+            const skeletonContent = document.createElement('div'); skeletonContent.className = 'space-y-3';
+            skeletonContent.innerHTML = `
+                <div class="skeleton skeleton-text-sm w-3/4 mb-2"></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div> <div class="skeleton skeleton-icon-placeholder mb-1"></div> <div class="skeleton skeleton-text-xs w-1/2"></div> <div class="skeleton skeleton-text-sm w-3/4"></div> </div>
+                    <div> <div class="skeleton skeleton-icon-placeholder mb-1"></div> <div class="skeleton skeleton-text-xs w-1/2"></div> <div class="skeleton skeleton-text-sm w-3/4"></div> </div>
+                    <div> <div class="skeleton skeleton-icon-placeholder mb-1"></div> <div class="skeleton skeleton-text-xs w-1/2"></div> <div class="skeleton skeleton-text-sm w-3/4"></div> </div>
+                    <div> <div class="skeleton skeleton-icon-placeholder mb-1"></div> <div class="skeleton skeleton-text-xs w-1/2"></div> <div class="skeleton skeleton-text-sm w-3/4 eto-value-highlight skeleton"></div> </div>
+                </div>`;
+            cardWrapper.appendChild(skeletonContent);
+            return cardWrapper;
+        }
+
+        function showSkeletons() {
+            todayOverviewContent.classList.add('hidden'); todayOverviewContent.classList.remove('loaded');
+            todayOverviewSkeleton.classList.remove('hidden');
+            forecastSummaryContent.classList.add('hidden'); forecastSummaryContent.classList.remove('loaded');
+            forecastSummarySkeleton.classList.remove('hidden');
+            forecastCardsContainer.innerHTML = ''; historicalCardsContainer.innerHTML = '';
+            const numForecastDays = parseInt(forecastDaysSelect.value);
+            for (let i = 0; i < numForecastDays; i++) { forecastCardsContainer.appendChild(createSkeletonCard()); }
+            for (let i = 0; i < 5; i++) { historicalCardsContainer.appendChild(createSkeletonCard()); }
+        }
+
+        function hideSkeletonsAndShowContent() {
+            todayOverviewSkeleton.classList.add('hidden');
+            todayOverviewContent.classList.remove('hidden');
+            setTimeout(() => todayOverviewContent.classList.add('loaded'), 10); 
+            
+            forecastSummarySkeleton.classList.add('hidden');
+            forecastSummaryContent.classList.remove('hidden');
+            setTimeout(() => forecastSummaryContent.classList.add('loaded'), 10); 
+        }
+
+        async function fetchWeatherData() {
+            showSkeletons(); hideError();
+            const forecastDays = parseInt(forecastDaysSelect.value);
+            const cacheKey = `weatherData-${currentCoords.lat.toFixed(4)}-${currentCoords.lon.toFixed(4)}-${forecastDays}`;
+            const todayDateString = new Date().toISOString().split('T')[0]; 
+            try {
+                const cachedItemJSON = sessionStorage.getItem(cacheKey);
+                if (cachedItemJSON) {
+                    const { data: cachedData, fetchDate } = JSON.parse(cachedItemJSON);
+                    if (fetchDate === todayDateString) { 
+                        console.log("A usar dados da cache (válidos para hoje) para:", cacheKey);
+                        displayWeatherData(cachedData, forecastDays); 
+                        return;
+                    } else { console.log("Cache de dia anterior encontrada, a limpar:", cacheKey); sessionStorage.removeItem(cacheKey); }
+                }
+            } catch (e) { console.error("Erro cache:", e); sessionStorage.removeItem(cacheKey); }
+            
+            console.log("A obter dados da API para:", cacheKey);
+            const params = new URLSearchParams({
+                latitude: currentCoords.lat.toFixed(4), longitude: currentCoords.lon.toFixed(4),
+                daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum,et0_fao_evapotranspiration',
+                forecast_days: forecastDays, past_days: 5, timezone: 'auto',
+                temperature_unit: 'celsius', windspeed_unit: 'kmh', precipitation_unit: 'mm'
+            });
+            try {
+                const response = await fetch(`${OPENMETEO_API_URL}?${params.toString()}`);
+                if (!response.ok) { const errData = await response.json(); throw new Error(errData.reason || `Erro API: ${response.status}`); }
+                const apiData = await response.json();
+                try { sessionStorage.setItem(cacheKey, JSON.stringify({ data: apiData, fetchDate: todayDateString })); } 
+                catch (e) { console.error("Erro ao guardar na cache:", e); }
+                displayWeatherData(apiData, forecastDays); 
+            } catch (error) { 
+                console.error("Erro API:", error); 
+                showError(`Falha ao obter dados: ${error.message}`);
+                hideSkeletonsAndShowContent(); 
+            }
+        }
+        
+        function displayWeatherData(data, numForecastDays) {
+            if (!data.daily || !data.daily.time) { showError("Dados inválidos da API."); hideSkeletonsAndShowContent(); return; }
+            forecastCardsContainer.innerHTML = ''; historicalCardsContainer.innerHTML = '';
+            const today = new Date(); today.setHours(0,0,0,0); 
+            const todayIndex = data.daily.time.findIndex(t => { const d = new Date(t); d.setHours(0,0,0,0); return d.getTime() === today.getTime(); });
+            if (todayIndex !== -1) {
+                todayEtoEl.textContent = `${data.daily.et0_fao_evapotranspiration[todayIndex]?.toFixed(2) || '-'} mm`;
+                todayPrecipitationEl.textContent = `${data.daily.precipitation_sum[todayIndex]?.toFixed(1) || '-'} mm`;
+            } else { 
+                const firstForecastIdx = data.daily.time.findIndex(t => new Date(t) >= today);
+                if (firstForecastIdx !== -1) {
+                    todayEtoEl.textContent = `${data.daily.et0_fao_evapotranspiration[firstForecastIdx]?.toFixed(2) || '-'} mm`;
+                    todayPrecipitationEl.textContent = `${data.daily.precipitation_sum[firstForecastIdx]?.toFixed(1) || '-'} mm`;
+                } else { todayEtoEl.textContent = '- mm'; todayPrecipitationEl.textContent = '- mm'; }
+            }
+            let forecastData = [], historicalData = [];
+            data.daily.time.forEach((time, i) => {
+                const date = new Date(time); date.setHours(0,0,0,0); 
+                const item = {
+                    date: new Date(time), temp_max: data.daily.temperature_2m_max[i], temp_min: data.daily.temperature_2m_min[i],
+                    precipitation: data.daily.precipitation_sum[i], eto: data.daily.et0_fao_evapotranspiration[i]
+                };
+                if (date < today) historicalData.push(item); else forecastData.push(item);
+            });
+            historicalData.sort((a,b) => b.date - a.date); historicalData = historicalData.slice(0, 5);
+            forecastData.slice(0, numForecastDays).forEach(item => {
+                const cardEl = createWeatherCard(item, false); forecastCardsContainer.appendChild(cardEl);
+                setTimeout(() => cardEl.querySelector('.card-content').classList.add('loaded'), 50);
+            });
+            historicalData.forEach(item => {
+                const cardEl = createWeatherCard(item, true); historicalCardsContainer.appendChild(cardEl);
+                setTimeout(() => cardEl.querySelector('.card-content').classList.add('loaded'), 50);
+            });
+            calculateForecastSummary(forecastData.slice(0, numForecastDays), numForecastDays);
+            hideSkeletonsAndShowContent(); 
+        }
+
+        function createWeatherCard(item, isHistorical) {
+            const cardWrapper = document.createElement('div'); cardWrapper.className = 'card';
+            const cardContent = document.createElement('div'); cardContent.className = 'card-content space-y-3'; 
+            const dateOptions = { weekday: 'long', day: 'numeric', month: 'short' };
+            let formattedDate = new Intl.DateTimeFormat('pt-PT', dateOptions).format(item.date).replace(/\.$/, '');
+            const todayD = new Date(); todayD.setHours(0,0,0,0);
+            const itemDNorm = new Date(item.date); itemDNorm.setHours(0,0,0,0);
+            const isTodayCard = itemDNorm.getTime() === todayD.getTime();
+            cardContent.innerHTML = `
+                <p class="text-sm font-medium">${isTodayCard ? 'Hoje, ' : ''}${formattedDate}</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="flex items-start space-x-2"> ${ICONS.temp_max} <div> <p class="text-xs text-gray-500 dark:text-gray-400">Temp Máx</p> <p class="font-semibold">${item.temp_max?.toFixed(1) || '-'}°C</p> </div> </div>
+                    <div class="flex items-start space-x-2"> ${ICONS.temp_min} <div> <p class="text-xs text-gray-500 dark:text-gray-400">Temp Mín</p> <p class="font-semibold">${item.temp_min?.toFixed(1) || '-'}°C</p> </div> </div>
+                    <div class="flex items-start space-x-2"> ${ICONS.precipitation} <div> <p class="text-xs text-gray-500 dark:text-gray-400">Precipitação</p> <p class="font-semibold">${item.precipitation?.toFixed(1) || '-'} mm</p> </div> </div>
+                    <div class="flex items-start space-x-2"> ${ICONS.eto} <div> <p class="text-xs text-gray-500 dark:text-gray-400">ETo</p> <p class="font-semibold eto-value-highlight">${item.eto?.toFixed(2) || '-'} mm</p> </div> </div>
+                </div>`;
+            cardWrapper.appendChild(cardContent);
+            return cardWrapper;
+        }
+
+        function calculateForecastSummary(forecastItems, numDays) {
+            forecastSummaryDaysEl.textContent = numDays; let sumEto = 0, sumPrecipitation = 0;
+            forecastItems.forEach(item => { sumEto += item.eto || 0; sumPrecipitation += item.precipitation || 0; });
+            totalEtoEl.textContent = `${sumEto.toFixed(2)} mm`; totalPrecipitationEl.textContent = `${sumPrecipitation.toFixed(1)} mm`;
+            if (sumEto > 0) { const ratio = (sumPrecipitation / sumEto) * 100; precipitationVsEtoEl.textContent = `${ratio.toFixed(1)} %`; } 
+            else { precipitationVsEtoEl.textContent = sumPrecipitation > 0 ? "Inf %" : "0.0 %"; }
+        }
+        
+        function showGlobalLoading(message = "A carregar...") { globalLoadingIndicator.classList.remove('hidden'); globalLoadingIndicator.querySelector('p').textContent = message; }
+        function hideGlobalLoading() { globalLoadingIndicator.classList.add('hidden'); }
+
+        function showError(message, type = 'error') { 
+            errorMessageDiv.textContent = message;
+            errorMessageDiv.classList.remove('hidden', 'bg-red-100', 'border-red-400', 'text-red-700', 'dark:bg-red-900', 'dark:border-red-700', 'dark:text-red-300', 'bg-green-100', 'border-green-400', 'text-green-700', 'dark:bg-green-700', 'dark:border-green-500', 'dark:text-green-200');
+            if (type === 'success') {
+                errorMessageDiv.classList.add('bg-green-100', 'border-green-400', 'text-green-700', 'dark:bg-green-700', 'dark:border-green-500', 'dark:text-green-200');
+            } else { 
+                errorMessageDiv.classList.add('bg-red-100', 'border-red-400', 'text-red-700', 'dark:bg-red-900', 'dark:border-red-700', 'dark:text-red-300');
+            }
+            setTimeout(() => { if (errorMessageDiv.textContent === message) { hideError(); } }, type === 'success' ? 3000 : 5000);
+        }
+        function hideError() { errorMessageDiv.classList.add('hidden'); }
+        
+        forecastDaysSelect.addEventListener('change', fetchWeatherData);
+
+        async function init() {
+            applyTheme(currentTheme); injectIcons(); updateDateDisplay(); initMap(); renderSavedLocations();
+            updateLocationDisplay(currentCityName); 
+            if (navigator.geolocation) {
+                // Don't auto-trigger geolocation on init, wait for button click
+            } else { 
+                // If geolocation is not supported at all, fetch for default immediately.
+                updateMapAndFetchWeather(currentCoords.lat, currentCoords.lon, "Lisboa, Portugal (Padrão)"); 
+            }
+            // Fetch weather for default location (Lisbon) on initial load.
+            fetchWeatherData();
+        }
+        init();
+    </script>
+</body>
+</html>
